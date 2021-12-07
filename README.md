@@ -5,7 +5,7 @@ The OIA on which this review is based is available in the [OIA subfolder](OIA).
 
 In my tweets, I made three claims. In this document I will substantiate each.
 
-### 1) ``The model was trained on data from 1996 to 2017. If you instead train the model on data from 1996 to 2020, you find that higher minimum wages *create* jobs.''
+#### 1) ``The model was trained on data from 1996 to 2017. If you instead train the model on data from 1996 to 2020, you find that higher minimum wages *create* jobs.''
 
 In [code.txt](OIA/Code.txt), we see that the model MBIE use to predict the effect of minimum wage increases is
 
@@ -29,3 +29,18 @@ The elasticity of -0.172 comes from worksheet `M' of [this Excel document](https
 
 I replicate that regression in the Stata do file [replicate.do](replicate/replicate.do). When I use data from the years 1996-2017, I calculate an elasticity = -0.178, which is very similar to that calculated by MBIE. When I use data from the years 1996-2020, I calculate an elasticity = 0.017. This elasticity is greater than zero, implying that higher minimum wages increase employment.
 
+
+#### 2) ``The model predicts that higher minimum wages *increase* Māori employment. MBIE obfuscated this finding by grouping effects on Māori with the effects on young people, Pasifika & women, as the `groups most affected'.''
+
+In [code.txt](OIA/Code.txt), MBIE present a positive elasticity for Māori. In fact they also present a positive (but somewhat smaller) elasticity for Pasifika. The `groups most affected' language comes from [the review](https://www.mbie.govt.nz/assets/minimum-wage-review-december-2020-redacted.pdf).
+
+#### 3) ``The model has a coding error which results in the estimated impact being off by a factor of 2.''
+
+Recall the model used to predict the effect of minimum wage increases:
+
+change in employment  =  
+(  (proposed min wage ÷ forecast average hourly rate)
+            - (current min wage ÷ current average hourly rate)
+) ×  elasticity × population.
+
+That is evidently different to the log-linear model with which the elasticity is estimated. From my reading through the OIA files, I think what's happened is that the model was, at some point, meant to have been changed -- but only the estimating equation was changed, while the code used to extrapolate that equation was unchanged. If MBIE had consistently used the log-linear model, they would have predicted that increasing the minimum wage from $18.90 to $20 would have reduced employment by 0.172×(log(20)-log(18.90)) = 0.9 percent. That would equal a loss of roughly 19000 jobs -- twice as many as they actually predicted.
