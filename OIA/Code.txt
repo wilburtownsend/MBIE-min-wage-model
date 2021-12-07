@@ -1,0 +1,1130 @@
+*-------------------------------------------------------------------------------------------------------------
+Program description 
+
+Objective:	
+	- Setup initial path and variables which will drive the rest of the project.
+ 
+Input:
+	- Year 
+    - Current and proposed new minimum wage rates 
+    - Wage growth rate from Tresury economic and fiscal update
+	- Compensation Share Of GDP from infoshare
+	- Elasticity 
+	- Average wage
+
+Output:
+	- variables 
+	- Reference format for occupations, Industries and regions
+--------------------------------------------------------------------------------------------------------------;
+
+*Year;
+%let Year = 2020;
+
+*Data file paths;
+libname HLFS '/nas/DataLab/RODatalab/HLFS and Supplements/HLFS/';
+*setup HLFS and income supplement tables ;
+%let HLFS_Table = "qtr%sysevalf((&Year.-2020)*4+139)";
+
+libname Income '/nas/DataLab/RODatalab/HLFS and Supplements/Supplements/Income/HLFS income content/';
+*setup HLFS and income supplement tables ;
+%let IS_Table = "income&Year.";
+
+*Output file paths;
+%let Output_Path = ;
+
+*options for the new minimum wages rate;
+
+%let Current_Minimum_Wage = 18.90;
+%let Preferred_Option = 20.00;
+
+%let New_Minimum_Wage_1 = 19.15;
+%let New_Minimum_Wage_2 = 19.50;
+%let New_Minimum_Wage_3 = 20.00;
+%let New_Minimum_Wage_4 = 20.50;
+%let New_Minimum_Wage_5 = 21.00;
+%let New_Minimum_Wage_6 = 21.50;
+%let New_Minimum_Wage_7 = 22.10;
+%let New_Minimum_Wage_8 = 22.29;
+
+%let Low_Wage = &Current_Minimum_Wage.*1.2;
+
+*Treasury economic and fiscal update Wages growth rate (average ordinary-time hourly, annual % change) in per cent of the implementation year.
+This is used to calculate the future year average wage;
+
+%let Treasury_Wage_Growth_Rate = 0.9;
+
+*The latest Compensation of employees share of GDP from Infoshare in Per cent.
+GDP(I), Nominal, Actual, Total (Annual-Mar) series from the National Accounts
+This is caluclated by (Compensation of Employees - received) / (Gross Domestic Product - income measure).;
+
+%let Compensation_Share_Of_GDP = 42.95436;
+
+*Elasticity of the employed population.
+These are sourced from the EView program;
+
+%let Elasticity_Upper = -0.34;
+%let Elasticity_Middle = -0.172;
+%let Elasticity_Lower = -0.02;
+
+%let Elasticity_1617 = 0.007;
+%let Elasticity_1819 = 0.131;
+%let Elasticity_Female = -0.26;
+%let Elasticity_Maori = 0.158;
+%let Elasticity_Pacific = 0.012;
+
+*2017 model;
+%let Elasticity_1617_17 = -0.8;
+%let Elasticity_1819_17 = 1.43;
+%let Elasticity_Female_17 = -0.05;
+%let Elasticity_Maori_17 = 0;
+%let Elasticity_Pacific_17 = -1.65;
+
+%let Elasticity_Bite = -0.192;
+
+*Current Average Wage;
+*This is from QES 
+- Average Hourly Earnings by Industry (ANZSIC06) and Sex (Qrtly-Mar/Jun/Sep/Dec)
+- Total All Industies
+- Ordinary Time Hourly
+- Q2 of the latest year;
+
+%let Current_Average_wage = 33.33;
+
+*Median_Wage;
+*This is from NZ.Stat 
+- Incomes -> Earnings for people in paid employment by region, sex, age groups and ethnic groups 
+- Median Hourly Earnings
+- Total for sexes, age and Ethnic group
+- This can change from quarter to quarter due to the reweighting of the HLFS;
+
+%let Median_Wage = 26.44;
+
+*format values;
+proc format; 
+value $Industry	
+	'A' = "Agriculture" 
+	'B' = "Mining"
+	'C' = "Manufacturing"
+	'D' = "Utilities" 
+	'E' = "Construction" 
+	'F' = "Wholesale" 
+	'G' = "Retail Trade"
+	'H' = "Hospitality"
+	'I' = "Transport and Storage" 
+	'J' = "IM and Telecommunications"
+	'K' = "Finance" 
+	'L' = "Real Estate"
+	'M' = "Prof services"
+	'N' = "Admin services"
+	'O' = "Public admin"
+	'P' = "Education"
+	'Q' = "Health"
+	'R' = "Arts & rec"
+	'S' = "Other services"
+	'T' = "Not included";
+value $Region
+	'01' = "Northland"
+	'02' = "Auckland"
+	'03' = "Waikato"
+	'04' = "Bay of Plenty"	
+	'05' = "Gisborne / Hawke's Bay"
+	'06' = "Taranaki"
+	'07' = "Manawatu-Wanganui"
+	'08' = "Wellington"
+	'09' = "Nelson / Tasman / Marlborough / West Coast"
+	'10' = "Canterbury"
+	'11' = "Otago"
+	'12' = "Southland";
+value $Occupation
+	'1'='Managers'
+	'2'='Professionals'
+	'3'='Technicians and Trades Workers'
+	'4'='Community and Personal Service Workers'
+	'5'='Clerical and Administrative Workers'	
+	'6'='Sales Workers'
+	'7'='Machinery Operators and Drivers'
+	'8'='Labourers'
+	'9'='Residual Categories';
+run;
+
+*setup EscapedChar for the footnote;
+%Let Footnote_Text = %sysfunc(cats(Option $, &Current_Minimum_Wage. ,0 reflects the total number of people on the current minimun wage (not the number of people affected).));
+
+*-------------------------------------------------------------------------------------------------------------
+Program description 
+
+Objective:	
+	- create the base tables for the Data Exploratory steps and the impact modelling step. 
+
+Input:
+	- variables from the previous step 
+	- HLFS
+	- Income supplement
+
+Output:
+	- Temp tables 
+		-work.Income_Survey_Data (Base table with the data required)
+		-Work.Minimum_Wage_Rate (base table with all the proposed minimum wage rates)
+
+Also note  this program will produce 3 warnings due to the left join with 3 duplicate joining variables in both the HLFS and the Income Survey datasets
+--------------------------------------------------------------------------------------------------------------;
+
+*calculate Number of Options
+This is done automatically by finding the number of macor variables with the name  NEW_MINIMUM_WAGE_;
+
+proc sql noprint;
+select count(*) into: Number_Of_Options from SASHELP.VMACRO where Name contains 'NEW_MINIMUM_WAGE_';
+
+*Create source tables ----------------------------------------------------------------------------------------;
+
+*combine the tables;
+proc sql noprint;
+create table work.Income_Survey_Data_Initial as 
+	select 
+		*
+	from 
+		Income.%sysfunc(dequote(&IS_Table)) T1
+	left join
+		HLFS.%sysfunc(dequote(&HLFS_Table))(drop=FinalWgt) T2 
+	on 
+		T1.person = T2.person 
+	and 
+		T1.newadrs = T2.newadrs
+	and 
+		T1.quarter = T2.Quarter;
+
+*Create the first source table from the latest HLFS income survey, 
+this will be used for the Data Exploratory work and Impact Model work;
+
+data work.Income_Survey_Data (keep=DVEmpStatMain DVEmpStatSec 
+DVTotalHourlyMain DVTotalHourlySec DVTotalHourlyAll Hourly_Rate
+DVHoursWeeklyMain DVHoursWeeklySec DVHoursWeeklyAll Weekly_Hours
+DVindmain DVindsec  Industry Occupation DVUrban
+Region P_Ethnicity FP_Time Female Post_Sch_Q Current_Study DVAge finalwgt Option: DV_GVT DV_ACC DVStuAllow DV_WI DV_IR DVSuper);
+
+	*source data;
+	set work.Income_Survey_Data_Initial;
+
+	*include, 16-64 paid employees in either their main or secondary job with valid hourly rates ;
+	where 
+		DVAge >=16 
+		and 
+		DVAge <65
+		and
+		(
+			(DVEmpStatMain = '11' and DVTotalHourlyMain>0)
+			or
+			(DVEmpStatSec = '11' and DVTotalHourlySec>0)
+		)
+		and
+		FinalWgt>0;
+
+	*reformat industry, Occpation  information, defaults to the main job unless the main job is not in paid employment;
+	if DVindmain = "" then DVindmain = "T";
+	if DVindsec = "" then DVindsec = "T";
+	if DVEmpStatMain = '11' then Industry = substr(DVindmain,1,1);
+	else Industry = substr(DVindsec,1,1);
+	format Industry Industry.;
+
+	if DVOccMain = "" then DVOccMain = "T";
+	if DVOccSec = "" then DVOccSec = "T";
+	if DVEmpStatMain = '11' then Occupation = substr(DVOccMain,1,1);
+	else Occupation = substr(DVOccSec,1,1);
+	format Occupation Occupation.;
+
+	Region =  DVRegion;
+	format Region Region.;
+
+	*reformat prioritised Ethnicity information;
+	format P_Ethnicity $20.;
+	if ethMaori = 1 then P_Ethnicity = 'Maori';
+	else if ethPacific = 1 then P_Ethnicity = 'Pacific Peoples';
+	else if ethAsian = 1 then P_Ethnicity = 'Asian';
+	else if ethEuropean = 1 then P_Ethnicity = 'European';
+	else P_Ethnicity ='Others';
+
+	*reformat full part time status;
+	if DVFTPT = 1 then FP_Time = 'Full Time';
+	else if DVFTPT = 2 then FP_TIme = 'Part Time';
+	else FP_TIme = 'Unknown';
+
+	*reformat sex;
+	if DVSex = '01' then Female=0;
+	else Female = 1;
+
+	*reformat post-school qualification;
+	if DVHQual in('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '15') then Post_Sch_Q = 1;
+	else Post_Sch_Q = 0;
+
+	*reformat currently studying flag;
+	if studyYN = "01" then Current_Study = 1;
+	else Current_Study = 0;
+	
+	*Extract hourly rate and hours;
+	*if both jobs are in paid employment then use the total hourly rate and weekly hours worked, otherwise use which ever is paid employment;
+	if DVEmpStatMain = '11' then
+		do;
+			if DVEmpStatSec = '11' then Hourly_Rate = DVTotalHourlyAll;
+			else Hourly_Rate = DVTotalHourlyMain;
+		end;
+	else Hourly_Rate = DVTotalHourlySec;
+
+	if DVEmpStatMain = '11' then
+		do;
+			if DVEmpStatSec = '11' then Weekly_Hours = DVHoursWeeklyAll;
+			else Weekly_Hours = DVHoursWeeklyMain;
+		end;
+	else Weekly_Hours = DVHoursWeeklySec;
+
+	*create a weights wage Band to make future calculations easier;
+	if Hourly_Rate =  &Current_Minimum_Wage. then Option_0 = FinalWgt;
+	else Option_0 = 0;
+	array Option_[&Number_Of_Options.]; 
+	Do i = 1 to &Number_Of_Options.;
+		Option_[i] = 0;
+		if Hourly_Rate >=  &Current_Minimum_Wage. and Hourly_Rate < symget(cats('New_Minimum_Wage_',i))
+		then Option_[i] = FinalWgt;
+	end;
+
+run;
+
+proc sort data=work.Income_Survey_Data;
+	by Hourly_Rate;
+run;
+
+*Create a table with the new rates;
+Data Work.Minimum_Wage_Rate (keep=Option Rate);
+	format Option Rate;
+	Option = 0; 
+	Rate = &Current_Minimum_Wage.;
+	output;
+	Do i = 1 to &Number_Of_Options.;
+		Do;
+			Option = i;
+			Rate =  symget(cats('New_Minimum_Wage_',i));
+		End;
+		output;
+	end;
+run;
+
+proc sql noprint;
+drop table work.Income_Survey_Data_Initial;
+run;
+*------------------------------------------------------------------------------------------------------------
+Program description 
+
+Objective:	
+	estimate the number of adult workers between the minimum wage rate and propose new rates
+
+Output:
+	-2 tables in HTML saved in the output folder specified in the Input programe.
+-------------------------------------------------------------------------------------------------------------;
+
+*create base table;
+Proc SQl noprint;
+	create table work.Temp_Table_Base as 
+	select 
+		Rate as Options
+	from 
+		work.minimum_wage_rate
+	where Rate > &Current_Minimum_Wage.;
+
+
+*Macro to generate the different age bands
+	- create a temp table with the number of people based on the lower and upper age for the different propose minimum wage rate (excluding the current minimum wage rate)
+	- merge the new information back into the base table
+	- delete the temp table;
+%Macro Table_Temp(Lower_Age,Upper_Age);
+
+	proc sql noprint;
+		create table work.Temp_Table_Staging as
+		select 
+			TA.Rate as Options,
+			Sum(case when TB.Hourly_Rate >= &Current_Minimum_Wage. and TB.Hourly_Rate < TA.Rate then TB.finalWgt else 0 end) as Affected_%sysfunc(dequote(&Lower_Age))_%sysfunc(dequote(&Upper_Age)) ,
+			Sum(TB.finalWgt) as Total_%sysfunc(dequote(&Lower_Age))_%sysfunc(dequote(&Upper_Age)) 
+		from work.minimum_wage_rate TA
+		left join work.income_survey_data TB 
+		on TB.DVAge >= %sysfunc(dequote(&Lower_Age)) and TB.DVAge <= %sysfunc(dequote(&Upper_Age)) 
+		where Rate > &Current_Minimum_Wage.
+		group by TA.Rate;
+
+	data work.Temp_Table_Base;
+		set work.Temp_Table_Base;
+		merge work.Temp_Table_Staging;
+		by Options;
+	run;
+
+	proc sql noprint;
+		drop table work.Temp_Table_Staging;
+
+%Mend;
+
+%Table_Temp('18','64');
+%Table_Temp('18','19');
+%Table_Temp('20','24');
+%Table_Temp('25','64');
+
+*Add people currently on Minimun Wage back in to the base table;
+proc sql;
+insert into work.Temp_Table_Base 
+select 
+	&Current_Minimum_Wage. as Rate,
+	/*18 - 64*/
+	Sum(case when Hourly_Rate = &Current_Minimum_Wage. and DVAge >=18 and DVAge <=64 then finalWgt else 0 end),
+	Sum(case when DVAge >=18 and DVAge <=64 then finalWgt else 0 end),
+	/*18 - 19*/
+	Sum(case when Hourly_Rate = &Current_Minimum_Wage. and DVAge >=18 and DVAge <=19 then finalWgt else 0 end),
+	Sum(case when DVAge >=18 and DVAge <=19 then finalWgt else 0 end),
+	/*20 - 24*/
+	Sum(case when Hourly_Rate = &Current_Minimum_Wage. and DVAge >=20 and DVAge <=24 then finalWgt else 0 end),
+	Sum(case when DVAge >=20 and DVAge <=24 then finalWgt else 0 end),
+	/*25 - 64*/
+	Sum(case when Hourly_Rate = &Current_Minimum_Wage. and DVAge >=25 and DVAge <=64 then finalWgt else 0 end),
+	Sum(case when DVAge >=25 and DVAge <=64 then finalWgt else 0 end)
+from 
+	work.income_survey_data;
+;
+
+proc sort Data=work.Temp_Table_Base ;
+by Options;
+run;
+
+*confidentialise and export the results;
+ods results off;
+ods html file= "%sysfunc(cats( &Output_Path. ,Adult Workers.html))";
+proc sql;
+title  'Estimated affected adult workers (aged 18 to 64 years)';
+Footnote "&Footnote_Text.";
+select 
+	*
+from 
+	work.Temp_Table_Base;
+
+title  'Estimated affected adult workers (aged 18 to 64 years) - Confidentialised';
+Footnote "&Footnote_Text.";
+select 
+	Options format dollar10.2,
+	case when Affected_18_64 < 1000 then 'S' else put(round(Affected_18_64,100),10.) end as Affected_18_64 ,
+	case when Total_18_64  < 1000 then 'S' else put(round(Total_18_64,100),10.) end as Total_18_64,
+	case when Affected_18_19 < 1000 then 'S' else put(round(Affected_18_19,100),10.) end as Affected_18_19 ,
+	case when Total_18_19 < 1000 then 'S' else put(round(Total_18_19,100),10.) end as Total_18_19,
+	case when Affected_20_24 < 1000 then 'S' else put(round(Affected_20_24,100),10.) end as Affected_20_24,
+	case when Total_20_24 < 1000 then 'S' else put(round(Total_20_24,100),10.) end as Total_20_24,
+	case when Affected_25_64 < 1000 then 'S' else put(round(Affected_25_64,100),10.) end as Affected_25_64,
+	case when Total_25_64 < 1000 then 'S' else put(round(Total_25_64,100),10.) end as Total_25_64
+from 
+	work.Temp_Table_Base;
+ods html close;
+
+*Delete Temp Table;
+proc sql noprint;
+drop table work.temp_table_base;
+*------------------------------------------------------------------------------------------------------------
+Program description 
+
+Objective:	
+	estimate the number of younger workers between the minimum wage rate and propose new rates
+
+Output:
+	-2 tables in HTML saved in the output folder specified in the Input programe.
+-------------------------------------------------------------------------------------------------------------;
+
+*create base table;
+proc sql noprint;
+	create table work.Temp_Table_Base as 
+	/*earning between the current Startup Wage and the current minimum wage rate*/
+	select 
+		&Current_Minimum_Wage.*0.8 as Options,
+		Sum(case when Hourly_Rate >= &Current_Minimum_Wage.*0.8 and Hourly_Rate < &Current_Minimum_Wage. then finalWgt else 0 end) as Affected,
+		sum(finalWgt) as Total
+	from 
+		work.income_survey_data 
+	where 
+		DVAge >=16 and DVAge <=17
+	/*earning at the current minimum Wage*/
+	Union 
+	select 
+		&Current_Minimum_Wage.,
+		Sum(case when TB.Hourly_Rate = &Current_Minimum_Wage. then TB.finalWgt else 0 end) as Affected,
+		sum(finalWgt) as Total
+	from 
+		work.income_survey_data TB 
+	where 
+		TB.DVAge >=16 and TB.DVAge <=17
+	/*earning between the current minimum Wage and the proposed minimum Wage*/
+	union
+	select 
+		T1.Rate as Options,
+		T2.Affected,
+		T2.Total
+	from 
+		(select Rate from work.minimum_wage_rate where Rate > &Current_Minimum_Wage.) T1
+	left join 
+		(select 
+			TA.Rate,
+			Sum(case when TB.Hourly_Rate >= &Current_Minimum_Wage. and TB.Hourly_Rate < TA.Rate then TB.finalWgt else 0 end) as Affected,
+			sum(finalWgt) as Total
+		from 
+			(select Rate from work.minimum_wage_rate where Rate > &Current_Minimum_Wage.) TA
+		left join work.income_survey_data TB 
+		on TB.DVAge >=16 and TB.DVAge <=17
+		group by TA.Rate) T2
+	on T1.Rate = T2.Rate;
+
+*confidentialise and export the results;
+ods results off;
+ods html file= "%sysfunc(cats( &Output_Path. ,Younger Workers.html))";
+proc sql;
+	title 'Estimated affected young workers (aged 16 to 17 years)';
+	Footnote  "&Footnote_Text.";
+	select 
+		Options format DOLLAR10.2,
+		Affected,
+		Total
+	from 
+		work.Temp_Table_Base;
+title  'Estimated affected young workers (aged 16 to 17 years)- Confidentialised';
+Footnote "&Footnote_Text.";
+
+select 
+	Options format dollar10.2,
+	case when Affected < 1000 then 'S' else put(round(Affected,100),10.) end as Affected ,
+	case when Total < 1000 then 'S' else put(round(Total,100),10.) end as Total
+from 
+	work.Temp_Table_Base;
+ods html close;
+
+
+*drop temp tables;
+proc sql noprint ;
+	drop table work.Temp_Table_Base;
+*------------------------------------------------------------------------------------------------------------
+Program description 
+
+Objective:	
+	estimate the number of workers on the minimum wage rate by the demographics
+
+Output:
+	-2 tables in HTML saved in the output folder specified in the Input programe.
+-------------------------------------------------------------------------------------------------------------;
+
+*create the base table;
+proc sql;
+	create table work.Temp_Table_Base
+	(Demographic char(100),
+	Affected_Age_1624 Numeric, 
+	Affected_Age_2564 Numeric,
+	Affected_Age_1664 Numeric, 
+	Affected_Total Numeric);
+
+*Macro to generate the different break downs;
+%Macro Table_Temp(Category,Condition);
+	proc sql noprint;
+		insert into work.Temp_Table_Base
+		select 
+			&Category. as Demographic,
+			sum(case when (DVAge >=16 and DVAge <=24 and Hourly_Rate = &Current_Minimum_Wage. and %sysfunc(dequote(&Condition))) then finalWgt else 0 end) as Affected_Age_1624,
+			sum(case when (DVAge >=25 and DVAge <=64 and Hourly_Rate = &Current_Minimum_Wage. and %sysfunc(dequote(&Condition))) then finalWgt else 0 end) as Affected_Age_2564,
+			sum(case when (DVAge >=16 and DVAge <=64 and Hourly_Rate = &Current_Minimum_Wage. and %sysfunc(dequote(&Condition))) then finalWgt else 0 end) as Affected_Age_1664,
+			sum(case when %sysfunc(dequote(&Condition)) then finalWgt else 0 end) as Affected_Total
+		from 
+			work.income_survey_data; 
+%Mend;
+
+*Age;
+%Table_Temp('Aged 16-24 years','DVAge >=16 and DVAge <=24');
+*Feamle;
+%Table_Temp('Female','Female = 1');
+*Pakeha;
+%Table_Temp('European/Pakeha',"P_Ethnicity = 'European'");
+*Maori;
+%Table_Temp('Maori',"P_Ethnicity = 'Maori'");
+*Pacific peopels;
+%Table_Temp('Pacific Peoples',"P_Ethnicity = 'Pacific Peoples'");
+*Part Time;
+%Table_Temp('Part Time',"FP_Time = 'Part Time'");
+*Studing;
+%Table_Temp('Studying',"Current_Study = 1");
+*Add Total;
+%Table_Temp('Total',"DVAge >=16");
+
+
+
+*confidentialise and export the results;
+ods results off;
+ods html file= "%sysfunc(cats( &Output_Path. ,Demographic at MW.html))";
+
+proc sql;
+	title 'Demographics of minimum wage earners';
+	footnote;
+	select 
+		*
+	from work.Temp_Table_Base
+	where Demographic ^= 'Total'
+	union
+	select 
+		*
+	from work.Temp_Table_Base
+	where Demographic = 'Total';
+title 'Demographics of minimum wage earners - Confidentialised';
+	select 
+		Demographic,
+		case when Affected_Age_1624 < 1000 then 'S' else put(round(Affected_Age_1624,100),10.) end as Affected_Age_1624 ,
+		case when Affected_Age_2564 < 1000 then 'S' else put(round(Affected_Age_2564,100),10.) end as Affected_Age_2564 ,
+		case when Affected_Age_1664 < 1000 then 'S' else put(round(Affected_Age_1664,100),10.) end as Affected_Age_1664 ,
+		case when Affected_Total < 1000 then 'S' else put(round(Affected_Total,100),10.) end as Affected_Total 
+	from work.Temp_Table_Base
+	where Demographic ^= 'Total'
+	union
+	select 
+		Demographic,
+		case when Affected_Age_1624 < 1000 then 'S' else put(round(Affected_Age_1624,100),10.) end as Affected_Age_1624 ,
+		case when Affected_Age_2564 < 1000 then 'S' else put(round(Affected_Age_2564,100),10.) end as Affected_Age_2564 ,
+		case when Affected_Age_1664 < 1000 then 'S' else put(round(Affected_Age_1664,100),10.) end as Affected_Age_1664 ,
+		case when Affected_Total < 1000 then 'S' else put(round(Affected_Total,100),10.) end as Affected_Total 
+	from work.Temp_Table_Base
+	where Demographic = 'Total';
+ods html close;
+
+
+
+*delete the temp table;
+proc sql noprint;
+drop table work.Temp_Table_Base;
+
+*------------------------------------------------------------------------------------------------------------
+Program description 
+
+Objective:	
+	estimate the number of workers earning between the minimum wage rate and the preferred new rates by the demographics
+
+Output:
+	-table of Demographics of minimum wage earners
+-------------------------------------------------------------------------------------------------------------;
+
+*create the base table;
+proc sql;
+	create table work.Temp_Table_Base
+	(Demographic char(100),
+	Affected_Age_1624 Numeric, 
+	Affected_Age_2564 Numeric, 
+	Affected_Age_1664 Numeric, 
+	Affected_Total Numeric);
+
+*Macro to generate the different break downs;
+%Macro Table_Temp(Category,Condition);
+	proc sql noprint;
+		insert into work.Temp_Table_Base
+		select 
+			&Category. as Demographic,
+			sum(case when (DVAge >=16 and DVAge <=24 and Hourly_Rate >= &Current_Minimum_Wage. and Hourly_Rate < &Preferred_Option. and %sysfunc(dequote(&Condition))) then finalWgt else 0 end) as Affected_Age_1624,
+			sum(case when (DVAge >=25 and DVAge <=64 and Hourly_Rate >= &Current_Minimum_Wage. and Hourly_Rate < &Preferred_Option. and %sysfunc(dequote(&Condition))) then finalWgt else 0 end) as Affected_Age_2564,
+			sum(case when (DVAge >=16 and DVAge <=64 and Hourly_Rate >= &Current_Minimum_Wage. and Hourly_Rate < &Preferred_Option. and %sysfunc(dequote(&Condition))) then finalWgt else 0 end) as Affected_Age_1664,
+			sum(case when %sysfunc(dequote(&Condition)) then finalWgt else 0 end) as Affected_Total
+		from 
+			work.income_survey_data; 
+%Mend;
+
+*Age;
+%Table_Temp('Aged 16-24 years','DVAge >=16 and DVAge <=24');
+*Feamle;
+%Table_Temp('Female','Female = 1');
+*Pakeha;
+%Table_Temp('European/Pakeha',"P_Ethnicity = 'European'");
+*Maori;
+%Table_Temp('Maori',"P_Ethnicity = 'Maori'");
+*Pacific peopels;
+%Table_Temp('Pacific Peoples',"P_Ethnicity = 'Pacific Peoples'");
+*Part Time;
+%Table_Temp('Part Time',"FP_Time = 'Part Time'");
+*Studing;
+%Table_Temp('Studying',"Current_Study = 1");
+*Add Total;
+%Table_Temp('Total',"DVAge >=16");
+
+
+
+*confidentialise and export the results;
+ods results off;
+ods html file= "%sysfunc(cats( &Output_Path. ,Demographic at MW and preferred new rate.html))";
+
+proc sql;
+	title 'Demographics of workers earning between the current minimum wage rate and the preferred new rate. ';
+	footnote;
+	select 
+		*
+	from work.Temp_Table_Base
+	where Demographic ^= 'Total'
+	union
+	select 
+		*
+	from work.Temp_Table_Base
+	where Demographic = 'Total'; 
+
+	title 'Demographics of workers earning between the current minimum wage rate and the preferred new rate. - Confidentialised';
+	select 
+		Demographic,
+		case when Affected_Age_1624 < 1000 then 'S' else put(round(Affected_Age_1624,100),10.) end as Affected_Age_1624 ,
+		case when Affected_Age_2564 < 1000 then 'S' else put(round(Affected_Age_2564,100),10.) end as Affected_Age_2564 ,
+		case when Affected_Age_1664 < 1000 then 'S' else put(round(Affected_Age_1664,100),10.) end as Affected_Age_1664 ,
+		case when Affected_Total < 1000 then 'S' else put(round(Affected_Total,100),10.) end as Affected_Total 
+	from work.Temp_Table_Base
+	where Demographic ^= 'Total'
+	union
+	select 
+		Demographic,
+		case when Affected_Age_1624 < 1000 then 'S' else put(round(Affected_Age_1624,100),10.) end as Affected_Age_1624 ,
+		case when Affected_Age_2564 < 1000 then 'S' else put(round(Affected_Age_2564,100),10.) end as Affected_Age_2564 ,
+		case when Affected_Age_1664 < 1000 then 'S' else put(round(Affected_Age_1664,100),10.) end as Affected_Age_1664 ,
+		case when Affected_Total < 1000 then 'S' else put(round(Affected_Total,100),10.) end as Affected_Total 
+	from work.Temp_Table_Base
+	where Demographic = 'Total';
+ods html close;
+
+
+*delete the temp table;
+proc sql noprint;
+drop table work.Temp_Table_Base;
+*------------------------------------------------------------------------------------------------------------
+Program description 
+
+Objective:	
+	estimate the number of workers between the current minimum wage rate and the proposed new rates in each region
+
+Output:
+		-2 tables in HTML saved in the output folder specified in the Input programe.
+-------------------------------------------------------------------------------------------------------------;
+
+Data work.income_survey_data_Region;
+set work.income_survey_data;
+run;
+proc sort data=work.income_survey_data_Region;
+	by Region;
+run;
+
+*Calculate affected number people in each options by Region;
+Proc summary data=work.income_survey_data_Region;
+	by region;
+	var option:;
+	output out=Work.Temp_Table_Affected(keep=Region Option_:) sum=; 
+run;
+
+*Change column Names so it can be joined to the rates;
+proc sql noprint;
+	select cat(name, ' = ', cats('Affected_',name)) into :TempName1 separated by ' '
+from
+	dictionary.columns where libname = 'WORK' and memname='TEMP_TABLE_AFFECTED';
+proc datasets library = work nolist;
+   modify TEMP_TABLE_AFFECTED;
+   rename &TempName1;
+quit;
+
+*Calculate Total number people in each region;
+proc summary data=work.income_survey_data_Region;
+	by region;
+	var FinalWgt;
+	output out=Work.Temp_Table_Total (keep=Region FinalWgt) sum= ; 
+run;
+
+*Combine tables;
+Data work.TEMP_TABLE_Base;
+	set work.TEMP_TABLE_AFFECTED (rename=Affected_Region = Region);
+	merge work.temp_table_total;
+run;
+
+*remove old tables;
+proc sql noprint;
+	drop table work.temp_table_affected;
+	drop table work.temp_table_total;
+	drop table work.income_survey_data_Region;
+
+*transpose the table;
+proc transpose data=work.temp_table_base out=work.temp_table_base(drop=_label_);
+	Var Affected_Option_: FinalWgt;
+	ID Region;
+run;
+
+
+*change column name;
+Data work.temp_table_base;
+	set work.temp_table_base;
+	if _Name_ = 'FinalWgt' then _Name_ = .;
+	else _Name_= trim(substr(_Name_,17,length(_Name_)));
+	Option = input(_Name_,2.);
+	drop _Name_;
+run; 
+
+*join with rates(Options);
+proc sql;
+create table work.temp_table_base_2 (drop = Option) as 
+select 
+	T1.*,
+	T2.Rate as Options
+from 
+	work.temp_table_base T1
+left join 
+	work.minimum_wage_rate T2
+on 
+	T1.Option = T2.Option;
+
+drop table work.temp_table_base;
+
+*remove uneeded column;
+Data work.temp_table_base_2 ;
+	set work.temp_table_base_2 (keep=Options);
+	set work.temp_table_base_2;
+	if Options <> . then Opions1 = put(Options,10.2); 
+	else Opions1 = 'Total';
+	drop Options;
+	rename Opions1 = Options;
+run;
+
+Data work.temp_table_base_2 ;
+	set work.temp_table_base_2 (keep=Options);
+	set work.temp_table_base_2;
+run;
+
+proc sort data=work.temp_table_base_2;
+by Options;
+run;
+
+
+
+*confidentialise and export the results;
+ods results off;
+ods html file= "%sysfunc(cats( &Output_Path. ,Regions.html))";
+proc sql;
+	Title 'Number of Minimum Wage workers in each region ';
+	Footnote "&Footnote_Text.";
+	select 
+		*
+	from work.temp_table_base_2;
+
+	title 'Number of Minimum Wage workers in each region  - Confidentialised';
+	Footnote "&Footnote_Text.";
+	select 
+		Options,
+		case when Northland < 1000 then 'S' else put(round(Northland,100),10.) end as Northland ,
+		case when Auckland < 1000 then 'S' else put(round(Auckland,100),10.) end as Auckland ,
+		case when Waikato < 1000 then 'S' else put(round(Waikato,100),10.) end as Waikato ,
+		case when  'Bay of Plenty'n < 1000 then 'S' else put(round('Bay of Plenty'n,100),10.) end as 'Bay of Plenty'n,
+		case when 'Gisborne / Hawke''s Bay'n < 1000 then 'S' else put(round('Gisborne / Hawke''s Bay'n,100),10.) end as 'Gisborne / Hawke''s Bay'n ,
+		case when Taranaki < 1000 then 'S' else put(round(Taranaki,100),10.) end as Taranaki ,
+		case when 'Manawatu-Wanganui'n < 1000 then 'S' else put(round('Manawatu-Wanganui'n,100),10.) end as 'Manawatu-Wanganui'n,
+		case when Wellington < 1000 then 'S' else put(round(Wellington,100),10.) end as Wellington ,
+		case when 'Nelson / Tasman / Marlborough /'n < 1000 then 'S' else put(round('Nelson / Tasman / Marlborough /'n,100),10.) end as 'Nelson / Tasman / Marlborough /'n ,
+		case when Canterbury < 1000 then 'S' else put(round(Canterbury,100),10.) end as Canterbury ,
+		case when Otago < 1000 then 'S' else put(round(Otago,100),10.) end as Otago ,
+		case when Southland < 1000 then 'S' else put(round(Southland,100),10.) end as Southland 
+	from work.temp_table_base_2;
+ods html close;
+
+
+
+
+*remove unneeded tables;
+proc sql;
+drop table work.temp_table_base_2;
+
+
+*------------------------------------------------------------------------------------------------------------
+Program description 
+
+Objective:	
+	estimate the number of workers earning at the current minimum wage rate in each Industry + their hours and total earnings
+
+Output:
+		-2 tables in HTML saved in the output folder specified in the Input programe.
+-------------------------------------------------------------------------------------------------------------;
+
+
+*Create base table;
+
+proc sql;
+	create table work.Temp_Table_Base as 
+	/*breakdown by industry*/
+	select 
+		T2.*
+	from
+		(select distinct Industry from work.income_survey_data where Industry ^= 'T') T1
+	left join
+		(select 
+			Industry,
+			sum(case when Hourly_Rate = &Current_Minimum_Wage. then FinalWgt else 0 end) as Affected_Workers,
+			sum(Finalwgt) as Total_Workers,
+			sum(case when Hourly_Rate = &Current_Minimum_Wage. then FinalWgt*weekly_hours else 0 end) as Affected_Hours,
+			sum(Finalwgt*weekly_hours) as Total_Hours,
+			sum(case when Hourly_Rate = &Current_Minimum_Wage. then FinalWgt*weekly_hours*Hourly_rate else 0 end) as Affected_Weekly_earnings,
+			sum(Finalwgt*weekly_hours*Hourly_rate) as Total_Weekly_Earnings
+		from
+			work.income_survey_data
+		Where 
+			Industry ^= 'T'
+		group by
+			Industry) T2
+	on
+		T1.Industry = T2.Industry
+	/*add in totals*/
+	union all
+	select 
+		'Total' as Industry,
+		sum(case when Hourly_Rate = &Current_Minimum_Wage. then FinalWgt else 0 end) as Affected_Workers,
+		sum(Finalwgt)  as Total_Workers,
+		sum(case when Hourly_Rate = &Current_Minimum_Wage. then FinalWgt*weekly_hours else 0 end) as Affected_Hours,
+		sum(Finalwgt*weekly_hours) as Total_Hours,
+		sum(case when Hourly_Rate = &Current_Minimum_Wage. then FinalWgt*weekly_hours*Hourly_rate else 0 end) as Affected_Weekly_earnings,
+		sum(Finalwgt*weekly_hours*Hourly_rate) as Total_Weekly_Earnings
+	from 
+		work.income_survey_data; 
+
+*confidentialise and export the results;
+ods results off;
+ods html file= "%sysfunc(cats( &Output_Path. ,Industry.html))";
+proc sql;
+	Title 'Minimum wage workers by industry';
+	footnote;
+	select 
+		Industry,
+		Affected_Workers, 
+		Affected_Hours,
+		Affected_Weekly_earnings,
+		Total_Workers, 
+		Total_Hours, 
+		Total_Weekly_Earnings 
+	from work.Temp_Table_Base;
+
+	title 'Number of Minimum Wage workers in each region (and as a percentage of all workers in each region)  - Confidentialised';
+	select 
+		Industry,
+		case when Affected_Workers < 1000 then 'S' else put(round(Affected_Workers,100),10.) end as Affected_Workers ,
+		case when Affected_Workers < 1000 then 'S' else put(round(Affected_Hours,1000),10.) end as Affected_Hours ,
+		case when Affected_Workers < 1000 then 'S' else put(round(Affected_Weekly_earnings,1000),10.) end as Affected_Weekly_earnings ,
+		case when Total_Workers < 1000 then 'S' else put(round(Total_Workers,100),10.) end as Total_Workers ,
+		case when Total_Workers < 1000 then 'S' else put(round(Total_Hours,1000),10.) end as Total_Hours ,
+		case when Total_Workers < 1000 then 'S' else put(round(Total_Weekly_Earnings,1000),10.) end as Total_Weekly_Earnings 
+	from work.Temp_Table_Base;
+ods html close;
+
+*remove temp table;
+proc sql;
+	drop table work.temp_table_base;
+	*------------------------------------------------------------------------------------------------------------
+Program description 
+
+Objective:	
+	estiamte protential impact of the new minimum wages
+
+Structure:
+	- calculate new variables based
+	- calculate the different impacts sparately 
+	- amalgamate all the changes to one table 
+
+Output:
+	- table of impact
+-------------------------------------------------------------------------------------------------------------;
+
+*Calculate current and future average wage, this is needed for the Kaitz-------------------------------------;
+
+*Future Average Wage;
+
+%let Future_Average_wage = %sysevalf(&Current_Average_wage.*(100+&Treasury_Wage_Growth_Rate.)/100);
+
+*Calculated variables needed for the impact model--------------------------------------------------------------;
+
+*current Kaitz = Current_Minimum_Wage/Current_Average_wage;
+
+%let Current_Kaitz = %sysevalf(&Current_Minimum_Wage./&Current_Average_wage.);
+
+*Calculate the total weekly income --------------------------------------------------------------------------;
+proc sql noprint;
+select
+	sum(hourly_rate*weekly_hours*Finalwgt) into: Total_Weekly_Income
+from 
+	work.income_survey_data;
+
+*Calculate number of the people impacted by the new Minimum Wage Rate----------------------------------------;
+
+Proc summary data=work.income_survey_data;
+	var Option_:;
+	output out=work.Temp_People_Affected (keep=Option_:) sum= ; 
+run;
+
+proc transpose data=work.Temp_People_Affected OUT=work.Temp_People_Affected name=Option;
+run;
+
+Data work.Temp_People_Affected;
+	set work.Temp_People_Affected;
+	Option = trim(substr(Option,8,length(Option)-8));
+	Option_1 = input(Option,8.);
+	drop Option;
+	rename col1=People_Affected Option_1=Option;
+run;
+
+*Calculate economy-wide increase in wages ------------------------------------------------------------------;
+
+Data work.Temp_Wage_Increase;
+	set work.income_survey_data; 
+	array Wage_Change_[&Number_Of_Options.]; 
+	Do i = 1 to &Number_Of_Options.;
+		Wage_Change_[i] = 0;
+		if Hourly_Rate >=  &Current_Minimum_Wage. and Hourly_Rate < symget(cats('New_Minimum_Wage_',i))
+		then Wage_Change_[i]= (symget(cats('New_Minimum_Wage_',i)) - hourly_rate)*weekly_hours*Finalwgt*(365.25/7);
+	end;
+run;
+
+Proc summary data=work.Temp_Wage_Increase;
+	var Wage_Change_:;
+	output out=work.Temp_Wage_Increase (keep=Wage_Change_:)sum= ; 
+run;
+
+proc transpose data=work.Temp_Wage_Increase OUT=work.Temp_Wage_Increase name=Option;
+run;
+
+Data work.Temp_Wage_Increase;
+	set work.Temp_Wage_Increase;
+	Option = trim(substr(Option,13,length(Option)-13));
+	Option_1 = input(Option,8.);
+	drop Option;
+	rename col1=Wage_Increase Option_1=Option;
+run;
+
+*Calculate Populations for Groups most affected" wage;
+proc sql noprint;
+select sum(FinalWgt) into: Sub_Pop_Female  from work.income_survey_data where Female = 1;
+select sum(FinalWgt) into: Sub_Pop_Maori  from work.income_survey_data where P_Ethnicity = 'Maori';
+select sum(FinalWgt) into: Sub_Pop_Pacific  from work.income_survey_data where P_Ethnicity = 'Pacific Peoples';
+select sum(FinalWgt) into: Sub_Pop_1617  from work.income_survey_data where DVAge >=16 and DVAge <=17;
+select sum(FinalWgt) into: Sub_Pop_1819  from work.income_survey_data where DVAge >=18 and DVAge <=19;
+
+%let Most_Affected = %SYSEVALF(&Elasticity_Female.*&Sub_Pop_Female.+ &Sub_Pop_Maori.*&Elasticity_Maori. + &Sub_Pop_Pacific.*&Elasticity_Pacific. + &Sub_Pop_1617.*&Elasticity_1617. + &Sub_Pop_1819.*&Elasticity_1819.);
+%let Most_Affected_17 = %SYSEVALF(&Elasticity_Female_17.*&Sub_Pop_Female.+ &Sub_Pop_Maori.*&Elasticity_Maori_17. + &Sub_Pop_Pacific.*&Elasticity_Pacific_17. + &Sub_Pop_1617.*&Elasticity_1617_17. + &Sub_Pop_1819.*&Elasticity_1819_17.);
+
+
+
+*Create the final table by linking all the previous calculations together;
+proc sql noprint;
+
+	create table 
+		work.Impact_Output as 
+	select 
+		'Option ' || put(T1.Option+1,1.) as Option,
+		T1.Rate,
+		T2.People_Affected as People_Affected,		
+		(T1.Rate/&Future_Average_wage. - &Current_Kaitz.)* &Elasticity_Lower. * T3.All_Population as Epm_Cons_L,
+		(T1.Rate/&Future_Average_wage. - &Current_Kaitz.)* &Elasticity_Middle. * T3.All_Population as Epm_Cons_M,
+		(T1.Rate/&Future_Average_wage. - &Current_Kaitz.)* &Elasticity_Upper. * T3.All_Population as Epm_Cons_H,
+		round(T4.Wage_Increase,1000000)/1000000 as Wage_Increase,
+		(T4.Wage_Increase/(365.25/7))/&Total_Weekly_Income. * (&Compensation_Share_Of_GDP./100) as Inflationary_on_GDP,
+		T3.All_Population as observed_population
+	from
+		Work.minimum_wage_rate T1
+	left join
+		work.Temp_People_Affected T2
+	on 
+		T1.Option = T2.Option
+	cross join 
+		(
+		select
+			sum(FinalWgt) as All_Population
+		from 
+			work.income_survey_data
+		) T3
+	left join
+		work.Temp_Wage_Increase T4
+	on 
+		T1.Option = T4.Option;
+run;
+proc sql noprint;
+	create table 
+		work.Impact_Output_2 as 
+	select 
+		'Option ' || put(T1.Option+1,1.) as Option,
+		T1.Rate,
+		(T1.Rate/&Future_Average_wage. - &Current_Kaitz.)* &Most_Affected. as Most_Affected,
+		(T1.Rate/&Future_Average_wage. - &Current_Kaitz.)* &Most_Affected_17. as Model_2017,
+		(T1.Rate/&Future_Average_wage. - &Current_Kaitz.)* &Elasticity_Middle. * T3.All_Population as Epm_Cons_M,
+		(T1.Rate/&Future_Average_wage. - &Current_Kaitz.)* &Elasticity_Bite. * T3.All_Population as Wage_Bites,
+		-&Most_Affected. as Most_Affected_pop,
+		-&Most_Affected_17. as Model_2017_pop,
+		T3.All_Population as Epm_Cons_M_pop,
+		T3.All_Population as Wage_Bites_pop
+	from
+		Work.minimum_wage_rate T1
+	left join
+		work.Temp_People_Affected T2
+	on 
+		T1.Option = T2.Option
+	cross join 
+		(
+		select
+			sum(FinalWgt) as All_Population
+		from 
+			work.income_survey_data
+		) T3;
+run;
+
+
+*confidentialise and export the results;
+ods results off;
+ods html file= "%sysfunc(cats( &Output_Path. ,Impact.html))";
+proc sql;
+title 'Summary of impacts of the minimum wage options';
+select 
+	*
+from 
+	work.impact_output;
+
+title 'Summary of impacts of the minimum wage options - Confidentialised';
+select 
+	Option,
+	Rate,
+	case when People_Affected < 1000 then 'S' else put(round(People_Affected,100),10.) end as People_Affected,
+	case when abs(Epm_Cons_L) < 1000 then 'S' else put(round(Epm_Cons_L,500),10.) end as Epm_Cons_L,
+	case when abs(Epm_Cons_M) < 1000 then 'S' else put(round(Epm_Cons_M,500),10.) end as Epm_Cons_M,
+	case when abs(Epm_Cons_H) < 1000 then 'S' else put(round(Epm_Cons_H,500),10.) end as Epm_Cons_H,
+	Wage_Increase,
+	Inflationary_on_GDP
+from 
+	work.impact_output;
+
+title 'Summary of impacts of the minimum wage options 2';
+select 
+	*
+from 
+	work.impact_output_2;
+title 'Summary of impacts of the minimum wage options 2 - Confidentialised';
+select 
+	Option,
+	Rate,
+	case when abs(Most_Affected) < 1000 then 'S' else put(round(Most_Affected,500),10.) end as Most_Affected,
+	case when abs(Model_2017) < 1000 then 'S' else put(round(Model_2017,500),10.) end as Model_2017,
+	case when abs(Epm_Cons_M) < 1000 then 'S' else put(round(Epm_Cons_M,500),10.) end as Epm_Cons_M,
+	case when abs(Wage_Bites) < 1000 then 'S' else put(round(Wage_Bites,500),10.) end as Wage_Bites
+from 
+	work.impact_output_2;
+run;
+ods html close;
+
+*delete uneeded tables;
+proc sql noprint;
+drop table work.temp_people_affected;
+drop table work.temp_wage_increase;
+drop table work.impact_output;
+drop table work.impact_output_2;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
