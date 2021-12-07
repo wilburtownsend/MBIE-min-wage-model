@@ -45,6 +45,5 @@ change in employment  =
 
 That is evidently different to the log-linear model with which the elasticity is estimated. From my reading through the OIA files, I think that the model was, at some point, meant to have been changed -- but only the estimating equation was changed, while the code used to extrapolate that equation was unchanged. If MBIE had consistently used the log-linear model, they would have predicted that increasing the minimum wage from $18.90 to $20 would have reduced employment by 0.172×(log(20)-log(18.90)) = 0.9 percent. That would equal a loss of roughly 19000 jobs -- twice as many as they actually predicted.
 
-#### Some stray thoughts.
-
-To be clear, I don't think the MBIE minimum wage model is much good. I don't think there's any justification for assuming a log-linear relationship between minimum wages and employment, even if there was I don't think that MBIE's estimation strategy has any credibiility, and even if it did their estimates are too imprecise to be at all useful. 
+#### To be clear.
+I don't think the MBIE minimum wage model is much good. I don't think there's any justification for assuming a log-linear relationship between minimum wages and employment, even if there was I don't think that MBIE's estimation strategy has any credibiility, and even if it did their estimates are too imprecise to be at all useful. 
